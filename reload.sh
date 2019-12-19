@@ -3,4 +3,4 @@
 
 killall chrome 
 /usr/bin/node /usr/bin/pm2 delete all 
-/usr/bin/node /usr/bin/pm2 start 'npm run start' --watch
+/usr/bin/node /usr/bin/pm2 start 'npm run start'
