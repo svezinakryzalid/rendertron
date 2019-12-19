@@ -52,6 +52,9 @@ export class Rendertron {
     } else if (this.config.cache === 'memory') {
       const { MemoryCache } = await import('./memory-cache');
       this.app.use(new MemoryCache().middleware());
+    } else if (this.config.cache === 'disk') {
+      const { DiskCache } = await import('./disk-cache');
+      this.app.use(new DiskCache().middleware());
     }
 
     this.app.use(
