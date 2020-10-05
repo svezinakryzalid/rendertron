@@ -19,18 +19,27 @@ export class Rendertron {
   app: Koa = new Koa();
   private config: Config = ConfigManager.config;
   private renderer: Renderer | undefined;
-  private port = process.env.PORT || this.config.port;
-  private host = process.env.HOST || this.config.host;
+  private port = process.env.PORT || null;
+  private host = process.env.HOST || null;
 
-  async initialize() {
+  async createRenderer(config: Config) {
+    const browser = await puppeteer.launch({ args: config.puppeteerArgs });
+
+    browser.on('disconnected', () => {
+      this.createRenderer(config);
+    });
+
+    this.renderer = new Renderer(browser, config);
+  }
+
+  async initialize(config?: Config) {
     // Load config
-    this.config = await ConfigManager.getConfiguration();
+    this.config = config || await ConfigManager.getConfiguration();
 
     this.port = this.port || this.config.port;
     this.host = this.host || this.config.host;
 
-    const browser = await puppeteer.launch({ args: ['--no-sandbox'] });
-    this.renderer = new Renderer(browser, this.config);
+    await this.createRenderer(this.config);
 
     this.app.use(koaLogger());
 
@@ -48,13 +57,19 @@ export class Rendertron {
     // Optionally enable cache for rendering requests.
     if (this.config.cache === 'datastore') {
       const { DatastoreCache } = await import('./datastore-cache');
-      this.app.use(new DatastoreCache().middleware());
+      const datastoreCache = new DatastoreCache();
+      this.app.use(route.get('/invalidate/:url(.*)', datastoreCache.invalidateHandler()));
+      this.app.use(datastoreCache.middleware());
     } else if (this.config.cache === 'memory') {
       const { MemoryCache } = await import('./memory-cache');
-      this.app.use(new MemoryCache().middleware());
-    } else if (this.config.cache === 'disk') {
-      const { DiskCache } = await import('./disk-cache');
-      this.app.use(new DiskCache().middleware());
+      const memoryCache = new MemoryCache();
+      this.app.use(route.get('/invalidate/:url(.*)', memoryCache.invalidateHandler()));
+      this.app.use(memoryCache.middleware());
+    } else if (this.config.cache === 'filesystem') {
+      const { FilesystemCache } = await import('./filesystem-cache');
+      const filesystemCache = new FilesystemCache(this.config);
+      this.app.use(route.get('/invalidate/:url(.*)', filesystemCache.invalidateHandler()));
+      this.app.use(new FilesystemCache(this.config).middleware());
     }
 
     this.app.use(
@@ -78,6 +93,10 @@ export class Rendertron {
     const protocol = parsedUrl.protocol || '';
 
     if (!protocol.match(/^https?/)) {
+      return true;
+    }
+
+    if (parsedUrl.hostname && parsedUrl.hostname.match(/\.internal$/)) {
       return true;
     }
 

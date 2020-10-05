@@ -1,5 +1,6 @@
 import * as puppeteer from 'puppeteer';
 import * as url from 'url';
+import { dirname } from 'path';
 
 import { Config } from './config';
 
@@ -37,7 +38,7 @@ export class Renderer {
      */
     function stripPage() {
       // Strip only script tags that contain JavaScript (either no type attribute or one that contains "javascript")
-      const elements = document.querySelectorAll('script:not([type]), script[type*="javascript"], link[rel=import]');
+      const elements = document.querySelectorAll('script:not([type]), script[type*="javascript"], script[type="module"], link[rel=import]');
       for (const e of Array.from(elements)) {
         e.remove();
       }
@@ -48,19 +49,25 @@ export class Renderer {
      * has no effect on serialised output, but allows it to verify render
      * quality.
      */
-    function injectBaseHref(origin: string) {
-      const base = document.createElement('base');
-      base.setAttribute('href', origin);
+    function injectBaseHref(origin: string, directory: string) {
 
       const bases = document.head.querySelectorAll('base');
       if (bases.length) {
         // Patch existing <base> if it is relative.
         const existingBase = bases[0].getAttribute('href') || '';
         if (existingBase.startsWith('/')) {
-          bases[0].setAttribute('href', origin + existingBase);
+          // check if is only "/" if so add the origin only
+          if (existingBase === '/') {
+            bases[0].setAttribute('href', origin);
+          } else {
+            bases[0].setAttribute('href', origin + existingBase);
+          }
         }
       } else {
         // Only inject <base> if it doesn't already exist.
+        const base = document.createElement('base');
+        // Base url is the current directory
+        base.setAttribute('href', origin + directory);
         document.head.insertAdjacentElement('afterbegin', base);
       }
     }
@@ -74,6 +81,8 @@ export class Renderer {
     if (isMobile) {
       page.setUserAgent(MOBILE_USERAGENT);
     }
+
+    await page.setExtraHTTPHeaders(this.config.reqHeaders);
 
     page.evaluateOnNewDocument('customElements.forcePolyfill = true');
     page.evaluateOnNewDocument('ShadyDOM = {force: true}');
@@ -158,14 +167,10 @@ export class Renderer {
     await page.evaluate(stripPage);
     // Inject <base> tag with the origin of the request (ie. no path).
     const parsedUrl = url.parse(requestUrl);
-    await page.evaluate(
-      injectBaseHref, `${parsedUrl.protocol}//${parsedUrl.host}`);
+    await page.evaluate(injectBaseHref, `${parsedUrl.protocol}//${parsedUrl.host}`, `${dirname(parsedUrl.pathname || '')}`);
 
     // Serialize page.
-    //let's just chill
-    let chill = 1;
-    await page.waitFor(chill);
-    const result = await page.evaluate('document.firstElementChild.outerHTML') as string;
+    const result = await page.content() as string;
 
     await page.close();
     return { status: statusCode, customHeaders: customHeaders ? new Map(JSON.parse(customHeaders)) : new Map(), content: result };
@@ -192,7 +197,7 @@ export class Renderer {
     try {
       // Navigate to page. Wait until there are no oustanding network requests.
       response =
-        await page.goto(url, { timeout: 10000, waitUntil: 'networkidle0' });
+        await page.goto(url, { timeout: this.config.timeout, waitUntil: 'networkidle0' });
     } catch (e) {
       console.error(e);
     }

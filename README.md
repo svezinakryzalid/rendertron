@@ -24,6 +24,7 @@ to be used as a production endpoint. You can use it, but there are no uptime gua
 - [API](#api)
   - [Render](#render)
   - [Screenshot](#screenshot)
+  - [Invalidate cache](#invalidate-cache)
 - [FAQ](#faq)
   - [Query parameters](#query-parameters)
   - [Auto detecting loading function](#auto-detecting-loading-function)
@@ -85,6 +86,13 @@ Additional options are available as a JSON string in the `POST` body. See
 [Puppeteer documentation](https://github.com/GoogleChrome/puppeteer/blob/v1.6.0/docs/api.md#pagescreenshotoptions)
 for available options. You cannot specify the `type` (defaults to `jpeg`) and
 `encoding` (defaults to `binary`) parameters.
+
+### Invalidate cache
+```
+GET /invalidate/<url>
+```
+
+The `invalidate` endpoint will remove cache entried for `<url>` from the configured cache (in-memory, filesystem or cloud datastore).
 
 ## FAQ
 
@@ -165,12 +173,31 @@ on how to deploy run headless Chrome in Docker.
 ### Config
 When deploying the service, set configuration variables by including a `config.json` in the
 root. Available configuration options:
- * `timeout` default `10000` - set the timeout used to render the target page. 
- * `port` default `3000` - set the port to use for running and listening the rendertron service. Note if process.env.PORT is set, it will be used instead.
- * `host` default `0.0.0.0` - set the hostname to use for running and listening the rendertron service. Note if process.env.HOST is set, it will be used instead.
- * `width` default `1000` - set the width (resolution) to be used for rendering the page.
- * `height` default `1000` - set the height (resolution) to be used for rendering the page.
- * `cache` default `null` - set to `datastore` to enable caching on Google Cloud using datastore or to `memory` to enable in-memory caching
+ * `timeout` _default `10000`_ - set the timeout used to render the target page. 
+ * `port` _default `3000`_ - set the port to use for running and listening the rendertron service. Note if process.env.PORT is set, it will be used instead.
+ * `host` _default `0.0.0.0`_ - set the hostname to use for running and listening the rendertron service. Note if process.env.HOST is set, it will be used instead.
+ * `width` _default `1000`_ - set the width (resolution) to be used for rendering the page.
+ * `height` _default `1000`_ - set the height (resolution) to be used for rendering the page.
+ * `reqHeaders` _default `{}`_ - set the additional HTTP headers to be sent to the target page with every request.
+ * `cache` _default `null`_ - set to `datastore` to enable caching on Google Cloud using datastore _only use if deploying to google cloud_, `memory` to enable in-memory caching or `filesystem` to enable disk based caching
+ * `cacheConfig` - an object array to specify caching options
+
+#### cacheConfig
+* `cacheDurationMinutes` _default `1440`_ - set an expiry time in minues, defaults to 24 hours. Set to -1 to disable cache Expiration
+* `cacheMaxEntries` _default `100`_ - set the maximum number of entries stored in the selected cache method. Set to `-1` to allow unlimited caching. If using the datastore caching method, setting this value over `1000` may lead to degraded performance as the query to determine the size of the cache may be too slow. If you want to allow a larger cache in `datastore` consider setting this to `-1` and managing the the size of your datastore using a method like this [Deleting Entries in Bulk](https://cloud.google.com/datastore/docs/bulk-delete)
+* `snapshotDir` _default `<your os's default tmp dir>/renderton`_ - **filesystem only** the directory the rendertron cache files will be stored in
+
+##### Example
+An example config file specifying a memory cache, with a 2 hour expiration, and a maximum of 50 entries
+```javascript
+{
+    "cache": "memory",
+    "cacheConfig": {
+        "cacheDurationMinutes": 120,
+        "cacheMaxEntries": 50
+    }
+}
+```
 
 ### Troubleshooting
 If you're having troubles with getting Headless Chrome to run in your

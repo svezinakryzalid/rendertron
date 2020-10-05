@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc. All rights reserved.
+ * Copyright 2020 Google Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not
  * use this file except in compliance with the License. You may obtain a copy of
@@ -16,17 +16,19 @@
 
 'use strict';
 
-import {test} from 'ava';
+import { test } from 'ava';
 import * as Koa from 'koa';
 import * as koaCompress from 'koa-compress';
 import * as request from 'supertest';
 import * as route from 'koa-route';
 
-import {DatastoreCache} from '../datastore-cache';
+import { FilesystemCache } from '../filesystem-cache';
+import { ConfigManager } from '../config';
 
+const config = ConfigManager.config;
 const app = new Koa();
 const server = request(app.listen());
-const cache = new DatastoreCache();
+const cache = new FilesystemCache(config);
 
 app.use(route.get('/compressed', koaCompress()));
 
@@ -35,7 +37,7 @@ app.use(cache.middleware());
 let handlerCalledCount = 0;
 
 test.before(async () => {
-  await cache.clearCache();
+  await cache.clearAllCache();
 });
 
 app.use(route.get('/', (ctx: Koa.Context) => {
@@ -43,32 +45,28 @@ app.use(route.get('/', (ctx: Koa.Context) => {
   ctx.body = `Called ${handlerCalledCount} times`;
 }));
 
-const promiseTimeout = function(timeout: number) {
+const promiseTimeout = function (timeout: number) {
   return new Promise((resolve) => {
     setTimeout(resolve, timeout);
   });
 };
 
 test('caches content and serves same content on cache hit', async (t) => {
-  let res = await server.get('/?basictest');
   const previousCount = handlerCalledCount;
+  let res = await server.get('/?basictest');
   t.is(res.status, 200);
-  t.is(res.text, 'Called ' + previousCount + ' times');
+  t.is(res.text, 'Called ' + (previousCount + 1) + ' times');
 
   // Workaround for race condition with writing to datastore.
   await promiseTimeout(2000);
 
   res = await server.get('/?basictest');
   t.is(res.status, 200);
-  t.is(res.text, 'Called ' + previousCount + ' times');
+  t.is(res.text, 'Called ' + (previousCount + 1) + ' times');
   t.truthy(res.header['x-rendertron-cached']);
   t.true(new Date(res.header['x-rendertron-cached']) <= new Date());
 
   res = await server.get('/?basictest');
-  t.is(res.status, 200);
-  t.is(res.text, 'Called ' + previousCount + ' times');
-
-  res = await server.get('/?basictest2');
   t.is(res.status, 200);
   t.is(res.text, 'Called ' + (previousCount + 1) + ' times');
 });
@@ -101,7 +99,7 @@ app.use(route.get('/compressed', (ctx: Koa.Context) => {
 test('compression preserved', async (t) => {
   const expectedBody = new Array(1025).join('x');
   let res = await server.get('/compressed')
-                .set('Accept-Encoding', 'gzip, deflate, br');
+    .set('Accept-Encoding', 'gzip, deflate, br');
   t.is(res.status, 200);
   t.is(res.header['content-encoding'], 'gzip');
   t.is(res.text, expectedBody);
@@ -110,7 +108,7 @@ test('compression preserved', async (t) => {
   await promiseTimeout(500);
 
   res = await server.get('/compressed')
-            .set('Accept-Encoding', 'gzip, deflate, br');
+    .set('Accept-Encoding', 'gzip, deflate, br');
   t.is(res.status, 200);
   t.is(res.header['content-encoding'], 'gzip');
   t.is(res.text, expectedBody);
@@ -135,6 +133,31 @@ test('original status is preserved', async (t) => {
   res = await server.get('/status/400');
   t.is(res.status, 401);
 });
+
+test('cache entry can be removed', async (t) => {
+  let res = await server.get('/?cacheremovetest');
+  t.is(res.status, 200);
+  t.falsy(res.header['x-rendertron-cached']);
+  t.false(new Date(res.header['x-rendertron-cached']) <= new Date());
+
+  res = await server.get('/?cacheremovetest');
+  t.is(res.status, 200);
+  t.truthy(res.header['x-rendertron-cached']);
+  t.true(new Date(res.header['x-rendertron-cached']) <= new Date());
+  const key = cache.hashCode('/?cacheremovetest');
+  cache.clearCache(key);
+  res = await server.get('/?cacheremovetest');
+  t.is(res.status, 200);
+  t.falsy(res.header['x-rendertron-cached']);
+  t.false(new Date(res.header['x-rendertron-cached']) <= new Date());
+
+  res = await server.get('/?cacheremovetest');
+  t.is(res.status, 200);
+  t.truthy(res.header['x-rendertron-cached']);
+  t.true(new Date(res.header['x-rendertron-cached']) <= new Date());
+
+});
+
 
 test('refreshCache refreshes cache', async (t) => {
   let content = 'content';
