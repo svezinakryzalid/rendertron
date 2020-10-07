@@ -23,9 +23,18 @@ Il est idéal de lancer le pre-render via un utilitaire de process management po
 
 Ajouter les lignes suivantes dans le fichier .htaccess
 
- ```<IfModule mod_proxy_http.c>
+    <IfModule mod_proxy_http.c>
         RewriteCond %{HTTP_USER_AGENT} kryzabot|XML\ Sitemaps\ Generator|googlebot|baiduspider|facebookexternalhit|twitterbot|rogerbot|linkedinbot|embedly|quora\ link\ preview|showyoubot|outbrain|pinterest|slackbot|vkShare|W3C_Validator|screaming [NC,OR]
         RewriteCond %{QUERY_STRING} _escaped_fragment_
         #eclosion prerender
         RewriteRule ^(?!.*?(\.svg|\.js|\.css|\.xml|\.less|\.png|\.jpg|\.jpeg|\.gif|\.pdf|\.doc|\.txt|\.ico|\.rss|\.zip|\.mp3|\.rar|\.exe|\.wmv|\.doc|\.avi|\.ppt|\.mpg|\.mpeg|\.tif|\.wav|\.mov|\.psd|\.ai|\.xls|\.mp4|\.m4a|\.swf|\.dat|\.dmg|\.iso|\.flv|\.m4v|\.torrent|\.ttf|\.woff))(.*) http://prerender.e-closion.ca:3000/render/https://%{HTTP_HOST}/$2 [P,L]
-    </IfModule>```
+    </IfModule
+
+## Mise à jour de notre version
+
+Il esxite un dépôt distant "upstream" qui suit de près le [projet initial](https://github.com/GoogleChrome/rendertron) sur lequel notre repo est "forké".
+
+Pour l'update juste merge la branche main du dépot upstream. (voir exemple)
+
+    git branch update-core
+    git merge upstream/master
