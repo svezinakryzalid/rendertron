@@ -37,6 +37,8 @@ export type Config = {
     reqHeaders: { [key: string]: string };
     headers: { [key: string]: string };
     puppeteerArgs: Array<string>;
+    renderOnly: Array<string>;
+    closeBrowser: boolean;
 };
 
 export class ConfigManager {
@@ -54,7 +56,9 @@ export class ConfigManager {
         height: 1000,
         reqHeaders: {},
         headers: {},
-        puppeteerArgs: ['--no-sandbox']
+        puppeteerArgs: ['--no-sandbox'],
+        renderOnly: [],
+        closeBrowser: false
     };
 
     static async getConfiguration(): Promise<Config> {

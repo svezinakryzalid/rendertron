@@ -27,7 +27,7 @@ to be used as a production endpoint. You can use it, but there are no uptime gua
   - [Invalidate cache](#invalidate-cache)
 - [FAQ](#faq)
   - [Query parameters](#query-parameters)
-  - [Auto detecting loading function](#auto-detecting-loading-function)
+  - [Page render timing](#page-render-timing)
   - [Rendering budget timeout](#rendering-budget-timeout)
   - [Web components](#web-components)
   - [Status codes](#status-codes)
@@ -81,6 +81,7 @@ Both endpoints support the following query parameters:
  * `height` defaults to `1000` - specifies viewport height.
  * `mobile` defaults to `false`. Enable by passing `?mobile` to request the
   mobile version of your site.
+ * `timezoneId` - specifies rendering for timezone.
 
 Additional options are available as a JSON string in the `POST` body. See
 [Puppeteer documentation](https://github.com/GoogleChrome/puppeteer/blob/v1.6.0/docs/api.md#pagescreenshotoptions)
@@ -103,8 +104,8 @@ this would be `encodeURIComponent(myURLWithParams)`. For example to specify `pag
 https://render-tron.appspot.com/render/http://my.domain/%3Fpage%3Dhome
 ```
 
-### Auto detecting loading function
-The service detects when a page has loaded by looking at the page load event, ensuring there
+### Page render timing
+The service attempts to detect when a page has loaded by looking at the page load event, ensuring there
 are no outstanding network requests and that the page has had ample time to render.
 
 ### Rendering budget timeout
@@ -181,6 +182,8 @@ root. Available configuration options:
  * `reqHeaders` _default `{}`_ - set the additional HTTP headers to be sent to the target page with every request.
  * `cache` _default `null`_ - set to `datastore` to enable caching on Google Cloud using datastore _only use if deploying to google cloud_, `memory` to enable in-memory caching or `filesystem` to enable disk based caching
  * `cacheConfig` - an object array to specify caching options
+ * `renderOnly` - restrict the endpoint to only service requests for certain domains. Specified as an array of strings. eg. `['http://render.only.this.domain']`. This is a strict prefix match, so ensure you specify the exact protocols that will be used (eg. http, https).
+ * `closeBrowser`_default `false`_ - `true` forces the browser to close and reopen between each page render, some sites might need this to prevent URLs past the first one rendered returning null responses.
 
 #### cacheConfig
 * `cacheDurationMinutes` _default `1440`_ - set an expiry time in minues, defaults to 24 hours. Set to -1 to disable cache Expiration

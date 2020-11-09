@@ -1,5 +1,5 @@
-import * as puppeteer from 'puppeteer';
-import * as url from 'url';
+import puppeteer, { ScreenshotOptions } from 'puppeteer';
+import url from 'url';
 import { dirname } from 'path';
 
 import { Config } from './config';
@@ -30,7 +30,17 @@ export class Renderer {
     this.config = config;
   }
 
-  async serialize(requestUrl: string, isMobile: boolean):
+  private restrictRequest(requestUrl: string): boolean {
+    const parsedUrl = url.parse(requestUrl);
+
+    if (parsedUrl.hostname && parsedUrl.hostname.match(/\.internal$/)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  async serialize(requestUrl: string, isMobile: boolean, timezoneId?: string):
     Promise<SerializedResponse> {
     /**
      * Executed on the page after the page has loaded. Strips script and
@@ -82,11 +92,31 @@ export class Renderer {
       page.setUserAgent(MOBILE_USERAGENT);
     }
 
+    if (timezoneId) {
+      try {
+        await page.emulateTimezone(timezoneId);
+      } catch (e) {
+        if (e.message.includes('Invalid timezone')) {
+          return { status: 400, customHeaders: new Map(), content: 'Invalid timezone id' };
+        }
+      }
+    }
+
     await page.setExtraHTTPHeaders(this.config.reqHeaders);
 
     page.evaluateOnNewDocument('customElements.forcePolyfill = true');
     page.evaluateOnNewDocument('ShadyDOM = {force: true}');
     page.evaluateOnNewDocument('ShadyCSS = {shimcssproperties: true}');
+
+    await page.setRequestInterception(true);
+
+    page.addListener('request', (interceptedRequest: puppeteer.Request) => {
+      if (this.restrictRequest(interceptedRequest.url())) {
+        interceptedRequest.abort();
+      } else {
+        interceptedRequest.continue();
+      }
+    });
 
     let response: puppeteer.Response | null = null;
     // Capture main frame response. This is used in the case that rendering
@@ -112,6 +142,9 @@ export class Renderer {
       // This should only occur when the page is about:blank. See
       // https://github.com/GoogleChrome/puppeteer/blob/v1.5.0/docs/api.md#pagegotourl-options.
       await page.close();
+      if (this.config.closeBrowser) {
+        await this.browser.close();
+      }
       return { status: 400, customHeaders: new Map(), content: '' };
     }
 
@@ -119,6 +152,9 @@ export class Renderer {
     // https://cloud.google.com/compute/docs/storing-retrieving-metadata.
     if (response.headers()['metadata-flavor'] === 'Google') {
       await page.close();
+      if (this.config.closeBrowser) {
+        await this.browser.close();
+      }
       return { status: 403, customHeaders: new Map(), content: '' };
     }
 
@@ -173,6 +209,9 @@ export class Renderer {
     const result = await page.content() as string;
 
     await page.close();
+    if (this.config.closeBrowser) {
+      await this.browser.close();
+    }
     return { status: statusCode, customHeaders: customHeaders ? new Map(JSON.parse(customHeaders)) : new Map(), content: result };
   }
 
@@ -180,7 +219,8 @@ export class Renderer {
     url: string,
     isMobile: boolean,
     dimensions: ViewportDimensions,
-    options?: object): Promise<Buffer> {
+    options?: ScreenshotOptions,
+    timezoneId?: string): Promise<Buffer> {
     const page = await this.browser.newPage();
 
     // Page may reload when setting isMobile
@@ -190,6 +230,20 @@ export class Renderer {
 
     if (isMobile) {
       page.setUserAgent(MOBILE_USERAGENT);
+    }
+
+    await page.setRequestInterception(true);
+
+    page.addListener('request', (interceptedRequest: puppeteer.Request) => {
+      if (this.restrictRequest(interceptedRequest.url())) {
+        interceptedRequest.abort();
+      } else {
+        interceptedRequest.continue();
+      }
+    });
+
+    if (timezoneId) {
+      await page.emulateTimezone(timezoneId);
     }
 
     let response: puppeteer.Response | null = null;
@@ -204,6 +258,9 @@ export class Renderer {
 
     if (!response) {
       await page.close();
+      if (this.config.closeBrowser) {
+        await this.browser.close();
+      }
       throw new ScreenshotError('NoResponse');
     }
 
@@ -211,16 +268,21 @@ export class Renderer {
     // https://cloud.google.com/compute/docs/storing-retrieving-metadata.
     if (response!.headers()['metadata-flavor'] === 'Google') {
       await page.close();
+      if (this.config.closeBrowser) {
+        await this.browser.close();
+      }
       throw new ScreenshotError('Forbidden');
     }
 
     // Must be jpeg & binary format.
-    const screenshotOptions =
-      Object.assign({}, options, { type: 'jpeg', encoding: 'binary' });
+    const screenshotOptions: ScreenshotOptions = { type: options?.type || 'jpeg', encoding: options?.encoding || 'binary' };
     // Screenshot returns a buffer based on specified encoding above.
     // https://github.com/GoogleChrome/puppeteer/blob/v1.8.0/docs/api.md#pagescreenshotoptions
     const buffer = await page.screenshot(screenshotOptions) as Buffer;
     await page.close();
+    if (this.config.closeBrowser) {
+      await this.browser.close();
+    }
     return buffer;
   }
 }
